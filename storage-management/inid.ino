@@ -573,6 +573,8 @@ struct dot begin2 = {0, 0};
 struct dot end2 = {2, 3};
 struct component sonet[64];
 uint8_t current_index = 0;
+uint8_t what_to_do;
+struct component current;
 
 void setup() {
   Serial.begin(9600);
@@ -581,52 +583,76 @@ void setup() {
     //t=0;
     //index=0;
     // No ScreenMap necessary for strips.
+    current = *(struct component*)malloc(sizeof(struct component)); // int uint string string uint
     FastLED.addLeds<NEOPIXEL, 2>(leds, NUM_LEDS);
     initGrid();
 }
 
+uint8_t indexByCoordinates(uint8_t x, uint8_t y) {
+    struct dot dots[15] = 
+    {{0, 0}, {0, 1}, {0, 2}, {1, 2}, {1, 1}, {1, 0}, /**/ {2, 0}, {2, 1}, {2, 2}, {3, 2}, {3, 1}, {3, 0}, /**/ {4, 0}, {4, 1}, {4, 2}};
+    for (uint8_t i = 0; i < 15; i++) {
+        if (dots[i].x == x && dots[i].y == y) {
+            return i;
+        }
+    }
+    return 255;
+}
+
 void loop() {
-    struct component current = *(struct component*)malloc(sizeof(struct component)); // int uint string string uint
-    uint8_t what_to_do;
+    
+    for (int i = 0; i < 64; i++) { current.marking[i] = '\0';}//char bbuuff[64];
+    for (int i = 0; i < 64; i++) { current.type[i] = '\0';}//char bbuuff[64];
+
     if (Serial.available()) {
         char bbuuff[64];
-        Serial.readBytesUntil('\n', bbuuff, MAX_LENGTH);
+        for (int i = 0; i < 64; i++) { bbuuff[i] = '\0';}//char bbuuff[64];
+        Serial.readBytesUntil(' ', bbuuff, MAX_LENGTH);
         sscanf(bbuuff, "%d", &what_to_do);
-    }
-    Serial.print("got what to do\n");
-    if (Serial.available()) {
-        char bbuuff[64];
-        Serial.readBytesUntil('\n', bbuuff, MAX_LENGTH);
+        Serial.print("got what to do: ");
+        Serial.println(what_to_do);
+    // }
+    
+    // if (Serial.available()) {
+        for (int i = 0; i < 64; i++) { bbuuff[i] = '\0';}//char bbuuff[64];
+        Serial.readBytesUntil(' ', bbuuff, MAX_LENGTH);
         sscanf(bbuuff, "%d", &current.dimensions);
-    }
-    Serial.print("got dimensions\n");
-    if (Serial.available()) {
-        char bbuuff[64];
-        Serial.readBytesUntil('\n', bbuuff, MAX_LENGTH);
+        Serial.print("got dimensions: ");
+        Serial.println(current.dimensions);
+    // }
+    
+    // if (Serial.available()) {
+        for (int i = 0; i < 64; i++) { bbuuff[i] = '\0';}//char bbuuff[64];
+        Serial.readBytesUntil(' ', bbuuff, MAX_LENGTH);
         sscanf(bbuuff, "%d", &current.complexity);
+        Serial.print("got complexity: ");
+        Serial.println(current.complexity);
 
-    }
+    // }
 
-    Serial.print("got complexity\n");
-    if (Serial.available()) {
-        Serial.readBytesUntil('\n', &current.marking[0], MAX_LENGTH);
-    }
-    Serial.print("got marking: ");
-    Serial.println(current.marking);
-    if (Serial.available()) {
-        Serial.readBytesUntil('\n', &current.type[0], MAX_LENGTH);
-    }
-    Serial.print("got type: ");
-    Serial.println(current.type);
+    
+    // if (Serial.available()) {
+        Serial.readBytesUntil(' ', &current.marking[0], MAX_LENGTH);
+        Serial.print("got marking: ");
+        Serial.println(current.marking);
+    // }
+    // if (Serial.available()) {
+        Serial.readBytesUntil(' ', &current.type[0], MAX_LENGTH);
+        Serial.print("got type: ");
+        Serial.println(current.type);
+    // }
 
-    if (Serial.available()) {
-        char bbuuff[64];
+    // if (Serial.available()) {
+        for (int i = 0; i < 64; i++) { bbuuff[i] = '\0';}//char bbuuff[64];
         Serial.readBytesUntil('\n', bbuuff, MAX_LENGTH);
         sscanf(bbuuff, "%d", &current.priority);
+        Serial.print("got priority: ");
+        Serial.println(current.priority);
+        sonet[0] = current;
+    } else {
+        what_to_do = 250;
     }
-    Serial.print("got priority\n");
-    sonet[0] = current;
-    if (what_to_do > 0) { // take
+    if (what_to_do == 1) { // take
         struct dot where;
         if (current.complexity == 0) {
             findSameInRect(&sonet[0], &begin2, &end2, &where);
@@ -639,13 +665,29 @@ void loop() {
             Serial.print(where.x);
             Serial.print(" ");
             Serial.println(where.y);
-            indexOfLed = where.y * ROWS + where.x;
+            indexOfLed = indexByCoordinates(where.x, where.y);
         }
-    } else { // put
+    } else if (what_to_do == 0) { // put
         if (current.complexity == 0) {
             distributeInRect(&sonet[0], 1, &begin2, &end2);
         } else {
             distributeInRect(&sonet[0], 1, &begin1, &end1);
+        }
+    } else if (what_to_do == 2) {
+        struct dot where;
+        if (current.complexity == 0) {
+            findSameInRect(&sonet[0], &begin2, &end2, &where);
+        } else {
+            findSameInRect(&sonet[0], &begin1, &end1, &where);
+        }
+        if (where.x == INVALID_DOT.x || where.y == INVALID_DOT.y) {
+            Serial.print("Не нашли такого. Положи.\n");
+        } else {
+            Serial.print(where.x);
+            Serial.print(" ");
+            Serial.println(where.y);
+            indexOfLed = indexByCoordinates(where.x, where.y);
+            deleteFromSlot(&where, &current);
         }
     }
 
@@ -661,6 +703,6 @@ void loop() {
         leds[x] = CRGB(value8, value8, value8);
     }
     FastLED.show();
-
-    outputGrid();
+    if (what_to_do < 2)
+        outputGrid();
 }
